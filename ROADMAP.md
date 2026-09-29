@@ -9,11 +9,12 @@ the one before it.
    (merged). Real host sockets behind `PS3_NET_ONLINE`.
 2. **Client, Matching2, Score, Lookup, Avc2:** in
    [ps3recomp#200](https://github.com/sp00nznet/ps3recomp/pull/200) (draft).
-   Simpsons Arcade matchmakes end to end. What's left there:
-   - **The title's session handshake.** Neither side sends its first P2P
-     packet. The title's transport channels accept only a peer whose member
-     id they have been assigned, and where that assignment comes from is
-     still unknown.
+   In Simpsons Arcade, two players reach a shared online lobby: they pick
+   characters and the host starts the game. What's left there:
+   - **Game setup transfer.** The title's own zlib (lifted code) emits a
+     broken 10-byte stream for its 58 KB game setup, so both sides stop at
+     "Transferring game setup". This is a recompiler or runtime bug, not a
+     network one.
    - Split `sceNpMatching2.c` to the toolkit's file-size guideline.
 3. **P2P vports:** `SOCK_DGRAM_P2P` maps to plain UDP on one port per
    instance. That is fine for one P2P datagram socket per title; a title with
