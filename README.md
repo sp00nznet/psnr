@@ -11,12 +11,13 @@ goes directly between them.
 **v0.1.0, alpha.**
 - **Server:** rooms (Matching2-style) and leaderboards (Score-style) work, and
   the C client works. Both are tested against each other on Windows and Linux.
-- **Games:** Simpsons Arcade runs as two instances on one machine: create
-  match, Quick Match, both players in each other's lobby, characters picked,
-  host starts. Lobby traffic goes peer to peer. The match itself stops at
-  "Transferring game setup", on a bug in the title's own lifted zlib. The
-  work is [ps3recomp#200](https://github.com/sp00nznet/ps3recomp/pull/200)
-  (draft) on top of the merged
+- **Games:** Simpsons Arcade plays an online match as two instances on one
+  machine: create match, Quick Match, lobby, characters, then Stage 1
+  together, in sync. Game traffic goes peer to peer. The work is
+  [ps3recomp#200](https://github.com/sp00nznet/ps3recomp/pull/200) (draft)
+  and the lifter fix
+  [ps3recomp#202](https://github.com/sp00nznet/ps3recomp/pull/202), on top
+  of the merged
   [ps3recomp#196](https://github.com/sp00nznet/ps3recomp/pull/196).
   [ROADMAP.md](ROADMAP.md) has the rest.
 
