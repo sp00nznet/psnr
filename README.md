@@ -11,11 +11,15 @@ goes directly between them.
 **v0.1.0, alpha.**
 - **Server:** rooms (Matching2-style) and leaderboards (Score-style) work, and
   the C client works. Both are tested against each other on Windows and Linux.
-- **Games:** no title talks to psnr yet. ps3recomp's `sceNpMatching2` and
-  `sceNpScore` modules are still offline stubs. The first prerequisite, working
-  guest sockets, is
+- **Games:** Simpsons Arcade plays an online match as two instances on one
+  machine: create match, Quick Match, lobby, characters, then Stage 1
+  together, in sync. Game traffic goes peer to peer. The work is
+  [ps3recomp#200](https://github.com/sp00nznet/ps3recomp/pull/200) (draft)
+  and the lifter fix
+  [ps3recomp#202](https://github.com/sp00nznet/ps3recomp/pull/202), on top
+  of the merged
   [ps3recomp#196](https://github.com/sp00nznet/ps3recomp/pull/196).
-  [ROADMAP.md](ROADMAP.md) has the order the rest lands in.
+  [ROADMAP.md](ROADMAP.md) has the rest.
 
 ## Screenshots
 
@@ -86,6 +90,25 @@ while (psnr_poll(c, &m) == 1) {        /* replies and pushes, never blocks */
 
 Every message is documented in [docs/api.md](docs/api.md).
 
+### Playing online
+
+A recompiled title goes online when these are set in its environment (this
+needs a ps3recomp build with
+[#200](https://github.com/sp00nznet/ps3recomp/pull/200); its `docs/ONLINE.md`
+has the full list):
+
+```
+PS3_NET_ONLINE=1           # real sockets instead of the offline stubs
+PSNR_SERVER=host[:port]    # this server
+PS3_NP_ONLINE_ID=homer     # the player's name; also gives the instance its own console identity
+PS3_NET_P2P_PORT=3658      # the UDP/TCP port peers reach this player on
+PS3_VERBOSE=0              # keep diagnostic logging from slowing the game down
+```
+
+Two instances on one machine need different `PS3_NP_ONLINE_ID`s and
+`PS3_NET_P2P_PORT`s. Across machines, each player's P2P port must be reachable
+by the others.
+
 ## Docs
 
 - [docs/architecture.md](docs/architecture.md): the parts, why the client has
@@ -107,6 +130,17 @@ cc -std=gnu11 -o test_psnr client/psnr.c client/test_psnr.c    # add -lws2_32 on
 ./test_psnr 127.0.0.1 36100
 ```
 
+## Security
+
+There are no accounts or passwords, and everyone in a room learns the other
+players' IP addresses. Run it for people you'd let onto your network. Details
+are in [SECURITY.md](SECURITY.md).
+
 ## License
 
 MIT. See [LICENSE](LICENSE).
+
+psnr is an independent project. It is not affiliated with or endorsed by Sony
+Interactive Entertainment; PlayStation and PSN are its trademarks. It contains
+no Sony code or game content, and implements its own protocol. You need your
+own legally obtained copies of the games.

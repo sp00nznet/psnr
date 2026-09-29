@@ -6,6 +6,14 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+- Protocol additions that Simpsons Arcade's Matching2 use needs. Clients
+  built against 0.1.0 no longer match.
+  - CREATE_ROOM and JOIN_ROOM carry the member's own data, and every member
+    entry returns it.
+  - SET_ROOM_DATA `which` 2 sets the room's flags, which searchers see.
+  - ROOM_MSG pushes say which member the message was sent to.
+
 ## [0.1.0] - 2026-09-29
 
 ### Added

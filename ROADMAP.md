@@ -5,25 +5,22 @@
 The work is in ps3recomp. Each item is its own PR there, and each depends on
 the one before it.
 
-1. **Guest sockets:** [ps3recomp#196](https://github.com/sp00nznet/ps3recomp/pull/196).
-   Real host sockets behind `PS3_NET_ONLINE`. Every item below needs it.
-2. **Vendor `client/` into ps3recomp** (`libs/network/psnr/`). Server address
-   from `PSNR_SERVER=host:port`, online ID from the existing fake-username
-   setting.
-3. **sceNpScore over psnr**, for Crazy Taxi and about eleven other titles:
-   - title and transaction contexts, `RecordScore` and `GetRankingByRange`/`ByNpId`
-     (sync and async), `PollAsync`;
-   - the missing `sceNp2Init`/`Term`.
-4. **sceNpMatching2 over psnr**, for Simpsons Arcade first:
-   - context start with its "context started" event;
-   - `SearchRoom`, `CreateJoinRoom`, `JoinRoom`, `LeaveRoom`;
-   - room data, room messages, `GetEventData`;
-   - room and signaling callbacks drained on the guest thread.
-   The runtime's Matching2 also needs the SDK's actual export names (`Init2`,
-   `ContextStartAsync`, ...).
-5. **sceNpSignaling / Matching2 signaling:** report peers connected once a
-   member's address is known, with `GetConnectionStatus` and `GetPingInfo`.
-   P2P sockets (`SOCK_DGRAM_P2P`) need vport multiplexing over one UDP port.
+1. **Guest sockets:** done in [ps3recomp#196](https://github.com/sp00nznet/ps3recomp/pull/196)
+   (merged). Real host sockets behind `PS3_NET_ONLINE`.
+2. **Client, Matching2, Score, Lookup, Avc2:** in
+   [ps3recomp#200](https://github.com/sp00nznet/ps3recomp/pull/200) (draft).
+   In Simpsons Arcade, two players meet, pick characters and play Stage 1
+   together. The game setup transfer also needed a lifter fix in the title's
+   zlib, [ps3recomp#202](https://github.com/sp00nznet/ps3recomp/pull/202).
+   What's left there:
+   - Split `sceNpMatching2.c` to the toolkit's file-size guideline.
+   - Play a match through to the end, and across two machines.
+3. **P2P vports:** `SOCK_DGRAM_P2P` maps to plain UDP on one port per
+   instance. That is fine for one P2P datagram socket per title; a title with
+   two needs vport multiplexing.
+4. **Leaderboard screens:** Simpsons' Scoreboards and Crazy Taxi both read
+   Score. This needs a live check of what they send and show.
+5. **Voice:** Avc2 currently carries no audio.
 6. **Second and third titles:** You Don't Know Jack (Matching2 + Signaling +
    RUDP) and the Sonic/Gunstar Genesis hub (the same shell as Simpsons).
 
