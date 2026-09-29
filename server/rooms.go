@@ -7,7 +7,10 @@ package main
 // peer's address and P2P port: that is what the client's signaling layer
 // connects to. The server never carries game traffic.
 
-import "time"
+import (
+	"encoding/binary"
+	"time"
+)
 
 type room struct {
 	id         uint64
@@ -23,12 +26,13 @@ type room struct {
 }
 
 type member struct {
-	id uint16
-	c  *client
+	id   uint16
+	c    *client
+	data []byte // the member's own data (Matching2 member bin attrs), set at join
 }
 
 // Member entry on the wire:
-// member_id u16 | user_id u32 | online_id [16] | ip [4] | p2p_port u16 | owner u8
+// member_id u16 | user_id u32 | online_id [16] | ip [4] | p2p_port u16 | owner u8 | data blob
 func (r *room) putMember(w *writer, m *member) {
 	w.u16(m.id)
 	w.u32(m.c.id)
@@ -40,6 +44,7 @@ func (r *room) putMember(w *writer, m *member) {
 	} else {
 		w.u8(0)
 	}
+	w.blob(m.data)
 }
 
 func (r *room) memberOf(c *client) *member {
@@ -70,16 +75,16 @@ func (r *room) joinedReply(req uint32, me *member) []byte {
 	return w.b
 }
 
-func (s *Server) addMember(r *room, c *client) *member {
+func (s *Server) addMember(r *room, c *client, data []byte) *member {
 	r.nextMember++
-	m := &member{id: r.nextMember, c: c}
+	m := &member{id: r.nextMember, c: c, data: data}
 	r.members = append(r.members, m)
 	c.rooms[r.id] = r
 	return m
 }
 
 func (s *Server) createRoom(c *client, req uint32, rd *reader) (byte, []byte) {
-	max, flags, ext, in := rd.u8(), rd.u32(), rd.blob(), rd.blob()
+	max, flags, ext, in, mine := rd.u8(), rd.u32(), rd.blob(), rd.blob(), rd.blob()
 	if rd.err != nil || max == 0 {
 		return msgError, errReply(req, errBadRequest)
 	}
@@ -90,7 +95,7 @@ func (s *Server) createRoom(c *client, req uint32, rd *reader) (byte, []byte) {
 	r := &room{id: s.nextRoom, commID: c.commID, max: max, flags: flags,
 		external: ext, internal: in, created: time.Now()}
 	s.rooms[r.id] = r
-	me := s.addMember(r, c)
+	me := s.addMember(r, c, mine)
 	r.owner = me.id
 	s.logf("room %d created by %s (%s, max %d)", r.id, c.onlineID, c.commID, max)
 	return msgRoomJoined, r.joinedReply(req, me)
@@ -134,7 +139,7 @@ func (s *Server) searchRooms(c *client, req uint32, rd *reader) (byte, []byte) {
 }
 
 func (s *Server) joinRoom(c *client, req uint32, rd *reader) (byte, []byte, []push) {
-	id := rd.u64()
+	id, mine := rd.u64(), rd.blob()
 	r, ok := s.rooms[id]
 	switch {
 	case rd.err != nil:
@@ -146,7 +151,7 @@ func (s *Server) joinRoom(c *client, req uint32, rd *reader) (byte, []byte, []pu
 	case len(r.members) >= int(r.max):
 		return msgError, errReply(req, errRoomFull), nil
 	}
-	me := s.addMember(r, c)
+	me := s.addMember(r, c, mine)
 
 	w := &writer{}
 	w.u64(r.id)
@@ -205,23 +210,28 @@ func (s *Server) leave(r *room, c *client) []push {
 	return out
 }
 
-// SET_ROOM_DATA: room_id u64 | which u8 (0 external, 1 internal) | blob.
-// Only the owner writes; members get ROOM_DATA: room_id | which | blob.
+// SET_ROOM_DATA: room_id u64 | which u8 | blob. which 0 = external data,
+// 1 = internal data, 2 = flags (the blob is a u32; searchers see them in
+// ROOM_LIST, so a title can mark its room closed). Only the owner writes;
+// members get ROOM_DATA: room_id | which | blob.
 func (s *Server) setRoomData(c *client, req uint32, rd *reader) (byte, []byte, []push) {
 	r, ok := s.rooms[rd.u64()]
 	which, data := rd.u8(), rd.blob()
 	switch {
-	case rd.err != nil || which > 1:
+	case rd.err != nil || which > 2 || which == 2 && len(data) != 4:
 		return msgError, errReply(req, errBadRequest), nil
 	case !ok || r.memberOf(c) == nil:
 		return msgError, errReply(req, errNotInRoom), nil
 	case r.memberOf(c).id != r.owner:
 		return msgError, errReply(req, errNotOwner), nil
 	}
-	if which == 0 {
+	switch which {
+	case 0:
 		r.external = data
-	} else {
+	case 1:
 		r.internal = data
+	case 2:
+		r.flags = binary.BigEndian.Uint32(data)
 	}
 	w := &writer{}
 	w.u64(r.id)
@@ -237,7 +247,7 @@ func (s *Server) setRoomData(c *client, req uint32, rd *reader) (byte, []byte, [
 }
 
 // ROOM_MESSAGE: room_id u64 | to u16 (0 = everyone else) | blob.
-// Delivered as ROOM_MSG: room_id | from u16 | blob.
+// Delivered as ROOM_MSG: room_id | from u16 | to u16 | blob.
 func (s *Server) roomMessage(c *client, req uint32, rd *reader) (byte, []byte, []push) {
 	r, ok := s.rooms[rd.u64()]
 	to, data := rd.u16(), rd.blob()
@@ -251,6 +261,7 @@ func (s *Server) roomMessage(c *client, req uint32, rd *reader) (byte, []byte, [
 	w := &writer{}
 	w.u64(r.id)
 	w.u16(from.id)
+	w.u16(to)
 	w.blob(data)
 	var out []push
 	for _, m := range r.members {

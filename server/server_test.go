@@ -106,6 +106,7 @@ func TestRooms(t *testing.T) {
 	w.u32(0)
 	w.blob([]byte("stage1"))
 	w.blob([]byte("secret"))
+	w.blob([]byte("homer"))
 	rt, r := a.call(msgCreateRoom, w.b)
 	if rt != msgRoomJoined {
 		t.Fatalf("create: 0x%02X", rt)
@@ -134,9 +135,10 @@ func TestRooms(t *testing.T) {
 	}
 
 	// bob joins: sees both members and the internal data; alice is told,
-	// with bob's p2p port
+	// with bob's p2p port and member data
 	w = &writer{}
 	w.u64(roomID)
+	w.blob([]byte("bart"))
 	rt, r = b.call(msgJoinRoom, w.b)
 	if rt != msgRoomJoined {
 		t.Fatalf("join: 0x%02X", rt)
@@ -149,6 +151,10 @@ func TestRooms(t *testing.T) {
 	if in := string(r.blob()); in != "secret" || owner != aMember || r.u8() != 2 {
 		t.Fatalf("join: internal %q owner %d", in, owner)
 	}
+	r.take(29) // alice's entry, up to her data
+	if d := string(r.blob()); d != "homer" {
+		t.Fatalf("join: alice's member data %q", d)
+	}
 	p := a.next(msgMemberJoined)
 	p.u64()
 	if id, _, name := p.u16(), p.u32(), p.str(16); id != bMember || name != "bob" {
@@ -157,6 +163,9 @@ func TestRooms(t *testing.T) {
 	p.take(4)
 	if port := p.u16(); port != 3659 {
 		t.Fatalf("member joined: port %d", port)
+	}
+	if p.u8(); string(p.blob()) != "bart" {
+		t.Fatal("member joined: member data")
 	}
 
 	// full now
@@ -174,8 +183,20 @@ func TestRooms(t *testing.T) {
 		t.Fatalf("message: 0x%02X", rt)
 	}
 	p = b.next(msgRoomMsg)
-	if p.u64(); p.u16() != aMember || string(p.blob()) != "go" {
+	if p.u64(); p.u16() != aMember || p.u16() != 0 || string(p.blob()) != "go" {
 		t.Fatal("room message")
+	}
+
+	// the owner closes the room: bob hears, and a searcher sees the flags
+	w = &writer{}
+	w.u64(roomID)
+	w.u8(2)
+	w.blob([]byte{0x40, 0, 0, 0})
+	if rt, _ = a.call(msgSetRoomData, w.b); rt != msgOK {
+		t.Fatalf("set flags: 0x%02X", rt)
+	}
+	if p = b.next(msgRoomData); p.u64() != roomID || p.u8() != 2 {
+		t.Fatal("flags push")
 	}
 
 	// only the owner writes room data

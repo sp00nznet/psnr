@@ -49,13 +49,14 @@ int main(int argc, char** argv)
     assert(a && b && ida != idb);
     assert(ip[0] != 0);   /* the address the server sees us at */
 
-    /* alice hosts: max 4 | flags 0 | external "x" | internal "" */
+    /* alice hosts: max 4 | flags 0 | external "x" | internal "" | member data "" */
     uint8_t body[64], *p = body;
     psnr_msg m;
     *p++ = 4;
     p = psnr_put32(p, 0);
     p = psnr_put16(p, 1);
     *p++ = 'x';
+    p = psnr_put16(p, 0);
     p = psnr_put16(p, 0);
     assert(psnr_call(a, PSNR_CREATE_ROOM, body, (uint32_t)(p - body), &m, 2000) == 1);
     assert(m.type == PSNR_ROOM_JOINED);
@@ -68,8 +69,9 @@ int main(int argc, char** argv)
     assert(psnr_call(b, PSNR_SEARCH_ROOMS, body, 4, &m, 2000) == 1);
     assert(m.type == PSNR_ROOM_LIST && psnr_get16(m.data + 2) == 1 && psnr_get64(m.data + 4) == room);
     psnr_msg_free(&m);
-    psnr_put64(body, room);
-    assert(psnr_call(b, PSNR_JOIN_ROOM, body, 8, &m, 2000) == 1);
+    p = psnr_put64(body, room);
+    p = psnr_put16(p, 0);   /* no member data */
+    assert(psnr_call(b, PSNR_JOIN_ROOM, body, (uint32_t)(p - body), &m, 2000) == 1);
     assert(m.type == PSNR_ROOM_JOINED);
     psnr_msg_free(&m);
 
@@ -101,7 +103,9 @@ int main(int argc, char** argv)
     assert(m.type == PSNR_OK);
     psnr_msg_free(&m);
     m = wait_push(a, PSNR_ROOM_MSG);
-    assert(psnr_get16(m.data + 10) == 2 && memcmp(m.data + 12, "hi", 2) == 0);
+    /* room u64 | from u16 | to u16 | blob */
+    assert(psnr_get16(m.data + 8) == 2 && psnr_get16(m.data + 10) == 0);
+    assert(psnr_get16(m.data + 12) == 2 && memcmp(m.data + 14, "hi", 2) == 0);
     psnr_msg_free(&m);
 
     psnr_close(b);

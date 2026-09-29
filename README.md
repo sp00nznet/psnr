@@ -11,11 +11,13 @@ goes directly between them.
 **v0.1.0, alpha.**
 - **Server:** rooms (Matching2-style) and leaderboards (Score-style) work, and
   the C client works. Both are tested against each other on Windows and Linux.
-- **Games:** no title talks to psnr yet. ps3recomp's `sceNpMatching2` and
-  `sceNpScore` modules are still offline stubs. The first prerequisite, working
-  guest sockets, is
+- **Games:** Simpsons Arcade matchmakes through psnr, with two instances on one
+  machine: create match, Quick Match, join, and each side learns the other's
+  P2P address. The game's own session doesn't start yet. That work is in
+  [ps3recomp#200](https://github.com/sp00nznet/ps3recomp/pull/200) (draft),
+  which builds on the merged
   [ps3recomp#196](https://github.com/sp00nznet/ps3recomp/pull/196).
-  [ROADMAP.md](ROADMAP.md) has the order the rest lands in.
+  [ROADMAP.md](ROADMAP.md) has the rest.
 
 ## Screenshots
 

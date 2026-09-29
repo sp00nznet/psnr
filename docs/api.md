@@ -25,14 +25,15 @@ Field notation used below:
 - `[n]`: a fixed-width field, NUL-padded.
 - `member`: a room member entry.
 
-`member` is 29 bytes:
+`member` is 29 bytes followed by a `blob`:
 
 ```
-member_id u16 | user_id u32 | online_id [16] | ip [4] | p2p_port u16 | owner u8
+member_id u16 | user_id u32 | online_id [16] | ip [4] | p2p_port u16 | owner u8 | data blob
 ```
 
 The `ip` field is the address the server sees the member connecting from. The
-`p2p_port` is the port that member sent in HELLO. Together they give peers each
+`p2p_port` is the port that member sent in HELLO. `data` is the member's own
+data (Matching2 member bin attributes), set when it creates or joins the room. Together they give peers each
 other's addresses. Game traffic goes between peers directly; the server never
 carries it.
 
@@ -86,9 +87,9 @@ These are modelled on sceNpMatching2 rooms.
 
 | Type | Name | Request (after `req`) | Reply |
 |---|---|---|---|
-| 0x10 | CREATE_ROOM | `max u8` `flags u32` `external blob` `internal blob` | ROOM_JOINED |
+| 0x10 | CREATE_ROOM | `max u8` `flags u32` `external blob` `internal blob` `member_data blob` | ROOM_JOINED |
 | 0x11 | SEARCH_ROOMS | `start u16` `max u16` | ROOM_LIST |
-| 0x12 | JOIN_ROOM | `room_id u64` | ROOM_JOINED |
+| 0x12 | JOIN_ROOM | `room_id u64` `member_data blob` | ROOM_JOINED |
 | 0x13 | LEAVE_ROOM | `room_id u64` | OK |
 | 0x14 | SET_ROOM_DATA | `room_id u64` `which u8` `data blob` | OK |
 | 0x15 | ROOM_MESSAGE | `room_id u64` `to u16` `data blob` | OK |
@@ -98,7 +99,9 @@ These are modelled on sceNpMatching2 rooms.
 - **Room data:** `external` is shown to searchers. `internal` is shown only to
   members.
 - **SET_ROOM_DATA:** only the owner may call it. `which` selects the field:
-  0 = external, 1 = internal.
+  0 = external, 1 = internal, 2 = flags (`data` is a 4-byte u32). Flags are
+  opaque to the server and shown to searchers in ROOM_LIST, so a title can
+  mark its room closed.
 - **ROOM_MESSAGE:** `to` is a member id, or 0 for every member except the
   sender.
 - **KICK_MEMBER:** only the owner may call it.
@@ -121,7 +124,7 @@ These are modelled on sceNpMatching2 rooms.
 | 0xA1 | MEMBER_JOINED | `room_id u64` `member` |
 | 0xA2 | MEMBER_LEFT | `room_id u64` `member_id u16` `owner u16` (the owner after the leave) |
 | 0xA3 | ROOM_DATA | `room_id u64` `which u8` `data blob` |
-| 0xA4 | ROOM_MSG | `room_id u64` `from u16` `data blob` |
+| 0xA4 | ROOM_MSG | `room_id u64` `from u16` `to u16` (0 = everyone) `data blob` |
 | 0xA5 | KICKED | `room_id u64`, sent to the kicked member only; the rest get MEMBER_LEFT |
 
 ## Leaderboards
