@@ -1,0 +1,7 @@
+services:
+  psnr:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "36100:36100"             # game clients
+      - "127.0.0.1:36101:36101"   # status page: this machine only

@@ -1,0 +1,19 @@
+# Build output
+/server/psnr
+/server/psnr.exe
+/psnr
+/psnr.exe
+*.o
+*.obj
+/client/test_psnr
+/client/test_psnr.exe
+
+# The xlive checkout kept alongside for reference; it is its own repo.
+/xlive/
+
+# Never committed (see the global excludes too)
+.env
+*.log
+setup.log
+/Start psnr.cmd
+/start-psnr.sh

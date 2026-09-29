@@ -1,0 +1,217 @@
+package main
+
+// One goroutine per client connection, one mutex over all room and score
+// state. Handlers run under the lock and return the pushes they owe other
+// clients; those are written after the lock drops, so a slow peer socket
+// never stalls anyone else's request.
+
+import (
+	"io"
+	"log"
+	"net"
+	"sort"
+	"sync"
+	"time"
+)
+
+const clientTimeout = 90 * time.Second // HELLO/HEARTBEAT keep a client alive
+
+type Server struct {
+	verbose bool
+
+	// ponytail: one lock for everything; per-title locks if one server ever
+	// carries enough titles for it to show.
+	mu       sync.Mutex
+	clients  map[uint32]*client
+	rooms    map[uint64]*room
+	boards   map[boardKey]*board
+	nextID   uint32
+	nextRoom uint64
+	maxRooms int
+	started  time.Time
+	conns    uint64
+}
+
+type client struct {
+	id       uint32
+	conn     net.Conn
+	commID   string // NP communication ID, e.g. NPWR00860_00: the title
+	onlineID string
+	ip       [4]byte // as the server sees it
+	p2pPort  uint16  // UDP port the title receives peer traffic on
+	rooms    map[uint64]*room
+	sendMu   sync.Mutex
+}
+
+type push struct {
+	to *client
+	t  byte
+	p  []byte
+}
+
+func NewServer(maxRooms int, verbose bool) *Server {
+	return &Server{
+		verbose:  verbose,
+		clients:  map[uint32]*client{},
+		rooms:    map[uint64]*room{},
+		boards:   map[boardKey]*board{},
+		maxRooms: maxRooms,
+		started:  time.Now(),
+	}
+}
+
+func (s *Server) Serve(ln net.Listener) error {
+	for {
+		conn, err := ln.Accept()
+		if err != nil {
+			return err
+		}
+		s.mu.Lock()
+		s.nextID++
+		s.conns++
+		c := &client{id: s.nextID, conn: conn, rooms: map[uint64]*room{}}
+		if a, ok := conn.RemoteAddr().(*net.TCPAddr); ok {
+			copy(c.ip[:], a.IP.To4())
+		}
+		s.clients[c.id] = c
+		s.mu.Unlock()
+		go s.run(c)
+	}
+}
+
+func (s *Server) run(c *client) {
+	defer func() {
+		c.conn.Close()
+		s.mu.Lock()
+		var out []push
+		for _, r := range c.rooms {
+			out = append(out, s.leave(r, c)...)
+		}
+		delete(s.clients, c.id)
+		s.mu.Unlock()
+		s.flush(out)
+		s.logf("client %d (%s) gone", c.id, c.onlineID)
+	}()
+
+	for {
+		c.conn.SetReadDeadline(time.Now().Add(clientTimeout))
+		t, p, err := readPacket(c.conn)
+		if err != nil {
+			if err != io.EOF {
+				s.logf("client %d read: %v", c.id, err)
+			}
+			return
+		}
+		s.handle(c, t, p)
+	}
+}
+
+func (s *Server) handle(c *client, t byte, p []byte) {
+	r := &reader{b: p}
+	req := r.u32()
+	if r.err != nil {
+		return
+	}
+	if t != msgHello && c.commID == "" {
+		c.send(msgError, errReply(req, errNoHello))
+		return
+	}
+
+	s.mu.Lock()
+	var reply []byte
+	var rt byte
+	var out []push
+	switch t {
+	case msgHello:
+		rt, reply = s.hello(c, req, r)
+	case msgHeartbeat:
+		s.mu.Unlock()
+		return
+	case msgCreateRoom:
+		rt, reply = s.createRoom(c, req, r)
+	case msgSearchRooms:
+		rt, reply = s.searchRooms(c, req, r)
+	case msgJoinRoom:
+		rt, reply, out = s.joinRoom(c, req, r)
+	case msgLeaveRoom:
+		rt, reply, out = s.leaveRoom(c, req, r)
+	case msgSetRoomData:
+		rt, reply, out = s.setRoomData(c, req, r)
+	case msgRoomMessage:
+		rt, reply, out = s.roomMessage(c, req, r)
+	case msgKickMember:
+		rt, reply, out = s.kick(c, req, r)
+	case msgRecordScore:
+		rt, reply = s.recordScore(c, req, r)
+	case msgGetRanking:
+		rt, reply = s.getRanking(c, req, r)
+	case msgGetRankingID:
+		rt, reply = s.getRankingByID(c, req, r)
+	default:
+		rt, reply = msgError, errReply(req, errBadRequest)
+	}
+	s.mu.Unlock()
+
+	c.send(rt, reply)
+	s.flush(out)
+}
+
+func (s *Server) hello(c *client, req uint32, r *reader) (byte, []byte) {
+	commID, onlineID, port := r.str(12), r.str(16), r.u16()
+	if r.err != nil || commID == "" {
+		return msgError, errReply(req, errBadRequest)
+	}
+	c.commID, c.onlineID, c.p2pPort = commID, onlineID, port
+	log.Printf("client %d: %s as %q from %d.%d.%d.%d, p2p port %d",
+		c.id, commID, onlineID, c.ip[0], c.ip[1], c.ip[2], c.ip[3], port)
+	w := &writer{}
+	w.u32(req)
+	w.u32(c.id)
+	w.bytes(c.ip[:])
+	return msgHelloAck, w.b
+}
+
+func (s *Server) flush(out []push) {
+	for _, m := range out {
+		m.to.send(m.t, m.p)
+	}
+}
+
+func (c *client) send(t byte, p []byte) {
+	c.sendMu.Lock()
+	defer c.sendMu.Unlock()
+	if err := writePacket(c.conn, t, p); err != nil {
+		c.conn.Close() // the reader goroutine sees it and cleans up
+	}
+}
+
+func errReply(req uint32, code uint32) []byte {
+	w := &writer{}
+	w.u32(req)
+	w.u32(code)
+	return w.b
+}
+
+func okReply(req uint32) []byte {
+	w := &writer{}
+	w.u32(req)
+	return w.b
+}
+
+func (s *Server) logf(f string, a ...any) {
+	if s.verbose {
+		log.Printf(f, a...)
+	}
+}
+
+// sortedRooms returns a title's rooms oldest first, so search pages are stable.
+func (s *Server) sortedRooms(commID string) []*room {
+	var out []*room
+	for _, r := range s.rooms {
+		if r.commID == commID {
+			out = append(out, r)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].id < out[j].id })
+	return out
+}

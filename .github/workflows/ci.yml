@@ -1,0 +1,27 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+      - name: gofmt
+        if: runner.os == 'Linux'
+        run: test -z "$(gofmt -l server)"
+      - name: vet
+        run: go vet ./...
+      # On Linux this also builds client/test_psnr.c and runs it against the
+      # server (TestCClient); it skips where no C compiler is on PATH.
+      - name: test
+        run: go test -v ./...
