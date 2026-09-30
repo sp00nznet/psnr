@@ -23,3 +23,12 @@ cd "$(dirname "$0")/server" && exec ./psnr
 EOS
 chmod +x start-psnr.sh
 echo "Done. Run ./start-psnr.sh, then open http://127.0.0.1:36101/"
+
+# Other players connect on TCP 36100. Say how to open it if a firewall is on;
+# changing the firewall is left to the admin.
+if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q "Status: active"; then
+  echo "ufw is on. To let other players connect: sudo ufw allow 36100/tcp"
+elif command -v firewall-cmd >/dev/null 2>&1 && firewall-cmd --state >/dev/null 2>&1; then
+  echo "firewalld is on. To let other players connect:"
+  echo "  sudo firewall-cmd --permanent --add-port=36100/tcp && sudo firewall-cmd --reload"
+fi
