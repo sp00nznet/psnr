@@ -315,3 +315,55 @@ func TestRequestBeforeHello(t *testing.T) {
 		t.Fatal("request before HELLO was served")
 	}
 }
+
+func hello(c *tc, commID, onlineID string) (byte, *reader) {
+	w := &writer{}
+	w.str(commID, 12)
+	w.str(onlineID, 16)
+	w.u16(3658)
+	return c.call(msgHello, w.b)
+}
+
+// A name belongs to one player. The same name from the same address is that
+// player reconnecting (a restarted title), so the old connection gives way.
+func TestSameAddressReconnectTakesOver(t *testing.T) {
+	addr := start(t)
+	old := dial(t, addr, "NPWR00001_00", "homer", 3658)
+	dial(t, addr, "NPWR00001_00", "Homer", 3658)
+	old.conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	if _, _, err := readPacket(old.conn); err == nil {
+		t.Fatal("the old connection is still open")
+	} else if ne, ok := err.(net.Error); ok && ne.Timeout() {
+		t.Fatal("the old connection was not closed")
+	}
+}
+
+// From another address it is someone else, and refused.
+func TestNameTakenFromAnotherAddress(t *testing.T) {
+	s := NewServer(10, false)
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ln.Close() })
+	go s.Serve(ln)
+
+	other, _ := net.Pipe()
+	s.mu.Lock()
+	s.clients[999] = &client{id: 999, conn: other, commID: "NPWR00001_00",
+		onlineID: "homer", ip: [4]byte{10, 0, 0, 2}, rooms: map[uint64]*room{}}
+	s.mu.Unlock()
+
+	conn, err := net.Dial("tcp", ln.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { conn.Close() })
+	c := &tc{t: t, conn: conn}
+	if rt, r := hello(c, "NPWR00001_00", "HOMER"); rt != msgError || r.u32() != errNameTaken {
+		t.Fatal("a second player got the name")
+	}
+	if rt, _ := hello(c, "NPWR00001_00", "marge"); rt != msgHelloAck {
+		t.Fatal("a free name was refused")
+	}
+}

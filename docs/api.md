@@ -47,7 +47,11 @@ carries it.
 **HELLO fields:**
 - `comm_id` is the title's NP communication ID (`NPWR00860_00`). It scopes
   rooms and leaderboards: two titles never see each other's.
-- `online_id` is the player's name.
+- `online_id` is the player's name. One player per name on a server,
+  compared case-insensitively: a HELLO with a name another connection holds
+  gets ERROR 8. From the same IP address it is taken to be the same player
+  reconnecting (a title that crashed and restarted), so the server closes the
+  old connection and accepts the new one.
 - `p2p_port` is the UDP port the title receives peer traffic on, or 0.
 
 HELLO must come first. Any other request before it gets ERROR 7.
@@ -74,6 +78,7 @@ client's `psnr_poll` sends a HEARTBEAT every 20 seconds.
 | 5 | not in that room |
 | 6 | server room limit reached |
 | 7 | no HELLO yet |
+| 8 | name taken (HELLO): another player on this server has it |
 
 ## Rooms
 

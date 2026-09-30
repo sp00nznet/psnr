@@ -42,7 +42,8 @@ enum {
 /* ERROR codes */
 enum {
     PSNR_E_BAD_REQUEST = 1, PSNR_E_NOT_FOUND = 2, PSNR_E_ROOM_FULL = 3,
-    PSNR_E_NOT_OWNER = 4, PSNR_E_NOT_IN_ROOM = 5, PSNR_E_LIMIT = 6, PSNR_E_NO_HELLO = 7
+    PSNR_E_NOT_OWNER = 4, PSNR_E_NOT_IN_ROOM = 5, PSNR_E_LIMIT = 6, PSNR_E_NO_HELLO = 7,
+    PSNR_E_NAME_TAKEN = 8
 };
 
 typedef struct psnr_client psnr_client;
@@ -63,6 +64,11 @@ typedef struct {
 psnr_client* psnr_connect(const char* host, uint16_t port,
                           const char* comm_id, const char* online_id, uint16_t p2p_port,
                           uint32_t* out_user_id, uint8_t out_public_ip[4]);
+
+/* After psnr_connect returned NULL: the ERROR code the server refused the
+ * HELLO with (PSNR_E_NAME_TAKEN: another player on the server has that
+ * name), or 0 if it never answered. */
+int psnr_connect_error(void);
 void psnr_close(psnr_client* c);
 
 /* Queue a request. body excludes the request id. Returns the id, or 0 if

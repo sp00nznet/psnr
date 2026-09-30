@@ -58,6 +58,7 @@ const (
 	errNotInRoom    = 5
 	errLimitReached = 6
 	errNoHello      = 7
+	errNameTaken    = 8 // HELLO: another player on this server has the name
 )
 
 const maxPayload = 0xFFFF
