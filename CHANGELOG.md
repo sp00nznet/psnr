@@ -11,6 +11,12 @@ All notable changes to this project are documented here. The format follows
   name someone else holds gets ERROR 8 (name taken); from the same IP address
   it is the same player reconnecting, and the old connection is closed. The C
   client reports the refusal through `psnr_connect_error()`.
+- Firewall: `Setup.cmd` offers to add a Windows Firewall rule for the server
+  (TCP 36100, one UAC prompt); `setup.sh` prints the ufw/firewalld command when
+  a firewall is on. `docs/running.md` covers the server's and players' rules.
+
+### Fixed
+- `docs/running.md` said the P2P port is UDP only; titles use TCP on it too.
 
 ### Changed
 - Protocol additions that Simpsons Arcade's Matching2 use needs. Clients
