@@ -12,14 +12,62 @@
 #include <stdlib.h>
 #include <string.h>
 #ifdef _WIN32
+#  include <winsock2.h>
 #  include <windows.h>
 #  define sleep_ms(n) Sleep(n)
+   typedef int socklen_t;
 #else
 #  include <unistd.h>
+#  include <sys/socket.h>
+#  include <netinet/in.h>
+#  include <fcntl.h>
 #  define sleep_ms(n) usleep((n) * 1000)
 #endif
 
 #define COMM "NPWR00001_00"
+
+/* A UDP socket, as a title's P2P socket would be, probes the server and gets
+ * back the address the server saw it at. */
+static void probe(psnr_client* c)
+{
+    int u = (int)socket(AF_INET, SOCK_DGRAM, 0);
+    struct sockaddr_in me, srv;
+    socklen_t n = sizeof(me);
+    uint8_t pkt[PSNR_UDP_PROBE_LEN], reply[64], ip[4];
+    uint16_t port;
+    assert(u >= 0);
+    memset(&me, 0, sizeof(me));
+    me.sin_family = AF_INET;
+    assert(bind(u, (struct sockaddr*)&me, sizeof(me)) == 0);
+    getsockname(u, (struct sockaddr*)&me, &n);
+#ifdef _WIN32
+    { u_long nb = 1; ioctlsocket(u, FIONBIO, &nb); }
+#else
+    fcntl(u, F_SETFL, O_NONBLOCK);
+#endif
+    memset(&srv, 0, sizeof(srv));
+    srv.sin_family = AF_INET;
+    psnr_server_addr(c, (uint8_t*)&srv.sin_addr, &port);
+    srv.sin_port = htons(port);
+    psnr_probe_packet(c, pkt);
+    assert(psnr_is_control(pkt, sizeof(pkt)));
+    for (int i = 0; i < 200; i++) {   /* ~2 s, one probe per 100 ms */
+        if (i % 20 == 0) sendto(u, (const char*)pkt, sizeof(pkt), 0, (struct sockaddr*)&srv, sizeof(srv));
+        int r = (int)recv(u, (char*)reply, sizeof(reply), 0);
+        if (r > 0 && psnr_probe_reply(reply, (size_t)r, ip, &port)) {
+            assert(port == ntohs(me.sin_port) && ip[0] == 127);
+#ifdef _WIN32
+            closesocket(u);
+#else
+            close(u);
+#endif
+            return;
+        }
+        sleep_ms(10);
+    }
+    fprintf(stderr, "no probe reply\n");
+    exit(1);
+}
 
 static psnr_msg wait_push(psnr_client* c, uint8_t type)
 {
@@ -48,6 +96,12 @@ int main(int argc, char** argv)
     psnr_client* b = psnr_connect(host, port, COMM, "bob", 3659, &idb, ip);
     assert(a && b && ida != idb);
     assert(ip[0] != 0);   /* the address the server sees us at */
+    probe(a);
+    {   /* a punch is a control packet; a title's own data isn't */
+        uint8_t punch[PSNR_UDP_PUNCH_LEN];
+        psnr_punch_packet(a, punch);
+        assert(psnr_is_control(punch, sizeof(punch)) && !psnr_is_control("hello", 5));
+    }
 
     /* alice hosts: max 4 | flags 0 | external "x" | internal "" | member data "" */
     uint8_t body[64], *p = body;

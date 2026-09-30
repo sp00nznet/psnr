@@ -25,3 +25,11 @@ jobs:
       # server (TestCClient); it skips where no C compiler is on PATH.
       - name: test
         run: go test -v ./...
+
+  # Players behind NATing routers, in Docker: lab/README.md.
+  nat-lab:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: lab/run.sh
+        run: sh lab/run.sh

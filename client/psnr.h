@@ -17,6 +17,7 @@
 #ifndef PSNR_H
 #define PSNR_H
 
+#include <stddef.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -64,6 +65,23 @@ typedef struct {
 psnr_client* psnr_connect(const char* host, uint16_t port,
                           const char* comm_id, const char* online_id, uint16_t p2p_port,
                           uint32_t* out_user_id, uint8_t out_public_ip[4]);
+
+/* NAT traversal (docs/api.md, "UDP"). The caller owns the P2P socket; these
+ * build and read the packets it exchanges. Every one starts with "PSNR".
+ *   - Send a PROBE from the P2P socket to psnr_server_addr, now and then (a
+ *     router forgets an idle mapping), until a probe reply comes back. The
+ *     server then hands other players this socket's public endpoint.
+ *   - Send a few PUNCHes to a peer when it appears, so this side's router
+ *     lets the peer's packets in.
+ *   - Drop anything psnr_is_control() matches before the title sees it. */
+#define PSNR_UDP_PROBE_LEN 17
+#define PSNR_UDP_PUNCH_LEN 9
+void psnr_server_addr(const psnr_client* c, uint8_t ip[4], uint16_t* port);
+void psnr_probe_packet(const psnr_client* c, uint8_t out[PSNR_UDP_PROBE_LEN]);
+void psnr_punch_packet(const psnr_client* c, uint8_t out[PSNR_UDP_PUNCH_LEN]);
+int  psnr_is_control(const void* buf, size_t len);
+/* 1 if buf is a probe reply; fills the public endpoint the server saw. */
+int  psnr_probe_reply(const void* buf, size_t len, uint8_t ip[4], uint16_t* port);
 
 /* After psnr_connect returned NULL: the ERROR code the server refused the
  * HELLO with (PSNR_E_NAME_TAKEN: another player on the server has that

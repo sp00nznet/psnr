@@ -6,6 +6,8 @@ package main
 // never stalls anyone else's request.
 
 import (
+	crand "crypto/rand"
+	"encoding/binary"
 	"io"
 	"log"
 	"net"
@@ -40,6 +42,10 @@ type client struct {
 	onlineID string
 	ip       [4]byte // as the server sees it
 	p2pPort  uint16  // UDP port the title receives peer traffic on
+	token    uint32  // from HELLO_ACK; UDP probes must carry it
+	udpIP    [4]byte // P2P socket's public endpoint, from its UDP probe
+	udpPort  uint16
+	localIP  [4]byte // the client's own address, from its UDP probe
 	rooms    map[uint64]*room
 	sendMu   sync.Mutex
 }
@@ -178,12 +184,16 @@ func (s *Server) hello(c *client, req uint32, r *reader) (byte, []byte) {
 		o.conn.Close()
 	}
 	c.commID, c.onlineID, c.p2pPort = commID, onlineID, port
+	var tok [4]byte
+	crand.Read(tok[:])
+	c.token = binary.BigEndian.Uint32(tok[:]) | 1 // never 0
 	log.Printf("client %d: %s as %q from %d.%d.%d.%d, p2p port %d",
 		c.id, commID, onlineID, c.ip[0], c.ip[1], c.ip[2], c.ip[3], port)
 	w := &writer{}
 	w.u32(req)
 	w.u32(c.id)
 	w.bytes(c.ip[:])
+	w.u32(c.token)
 	return msgHelloAck, w.b
 }
 

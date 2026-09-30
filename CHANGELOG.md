@@ -15,6 +15,20 @@ All notable changes to this project are documented here. The format follows
   (TCP 36100, one UAC prompt); `setup.sh` prints the ufw/firewalld command when
   a firewall is on. `docs/running.md` covers the server's and players' rules.
 
+- NAT traversal. The server listens on UDP 36100 too. A player's P2P socket
+  sends it a PROBE (with a token from HELLO_ACK), and the server records the
+  public endpoint the probe came from. Member entries now give each viewer the
+  address that works from where they are: that public endpoint from another
+  network, the member's LAN address from the same one. Clients built against
+  0.2 still work; without a probe nothing changes. The C client builds and
+  reads the packets (`psnr_probe_packet`, `psnr_punch_packet`,
+  `psnr_probe_reply`, `psnr_is_control`); the caller sends them from its own
+  P2P socket. Protocol in `docs/api.md`, "UDP".
+- `lab/`: a NAT lab in Docker. A psnr server on a pretend internet, headless
+  players behind NATing routers, and three scenarios: two homes (passes), a
+  symmetric NAT (fails until psnr has a relay), and two players in one home
+  (passes, over LAN addresses). CI runs it.
+
 ### Fixed
 - `docs/running.md` said the P2P port is UDP only; titles use TCP on it too.
 

@@ -1,0 +1,70 @@
+# The NAT lab (see README.md): a psnr server on a pretend internet, and players
+# on home networks behind NATing routers. Run it with lab/run.sh.
+#
+# The home networks can't be Docker "internal" networks: those drop every
+# packet addressed outside their own subnet, including a player's packets on
+# their way to its router. The real internet is still out of reach: players
+# route only through their router, and a router drops its Docker default
+# route, so it only knows the lab's own subnets.
+name: psnr-lab
+
+networks:
+  internet: { internal: true, ipam: { config: [ { subnet: 10.99.0.0/24 } ] } }
+  home_a:   { ipam: { config: [ { subnet: 192.168.10.0/24 } ] } }
+  home_b:   { ipam: { config: [ { subnet: 192.168.20.0/24 } ] } }
+
+# run.sh builds both images first; compose only uses them.
+x-node: &node
+  image: psnr-lab-node
+  pull_policy: never
+  cap_add: [ NET_ADMIN ]
+
+services:
+  server:
+    image: psnr-lab-server
+    pull_policy: never
+    command: [ "-v" ]
+    networks: { internet: { ipv4_address: 10.99.0.10 } }
+
+  router_a:
+    <<: *node
+    entrypoint: [ router.sh ]
+    environment: { NAT: "${NAT_A:-cone}" }
+    sysctls: { net.ipv4.ip_forward: 1 }
+    networks:
+      internet: { ipv4_address: 10.99.0.2 }
+      home_a:   { ipv4_address: 192.168.10.2 }
+
+  router_b:
+    <<: *node
+    entrypoint: [ router.sh ]
+    environment: { NAT: "${NAT_B:-cone}" }
+    sysctls: { net.ipv4.ip_forward: 1 }
+    networks:
+      internet: { ipv4_address: 10.99.0.3 }
+      home_b:   { ipv4_address: 192.168.20.2 }
+
+  # Hosts a room. Behind router_a.
+  alice:
+    <<: *node
+    entrypoint: [ player.sh, "10.99.0.10", alice, host ]
+    environment: { ROUTER: 192.168.10.2 }
+    networks: { home_a: { ipv4_address: 192.168.10.10 } }
+    depends_on: [ server, router_a ]
+
+  # Joins from another home, behind router_b.
+  bob:
+    <<: *node
+    entrypoint: [ player.sh, "10.99.0.10", bob, join ]
+    environment: { ROUTER: 192.168.20.2 }
+    networks: { home_b: { ipv4_address: 192.168.20.10 } }
+    depends_on: [ server, router_b ]
+
+  # Joins from alice's own home network (the "samelan" scenario).
+  carol:
+    <<: *node
+    entrypoint: [ player.sh, "10.99.0.10", carol, join ]
+    environment: { ROUTER: 192.168.10.2 }
+    networks: { home_a: { ipv4_address: 192.168.10.11 } }
+    depends_on: [ server, router_a ]
+    profiles: [ samelan ]

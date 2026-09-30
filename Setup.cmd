@@ -40,16 +40,16 @@ popd
 echo Built.
 
 echo.
-echo Other players connect to this server on TCP port 36100. Windows Firewall
+echo Other players connect to this server on port 36100 (TCP and UDP). Windows Firewall
 echo blocks that unless a rule allows it (not needed if only this PC plays).
 choice /m "Add a firewall rule for psnr now (asks for admin)"
 if errorlevel 2 goto done
-powershell -NoProfile -Command "Start-Process -Verb RunAs -Wait cmd -ArgumentList '/c netsh advfirewall firewall delete rule name=psnr & netsh advfirewall firewall add rule name=psnr dir=in action=allow protocol=TCP localport=36100 program=\"%~dp0server\psnr.exe\"'" >> "%LOG%" 2>&1
+powershell -NoProfile -Command "Start-Process -Verb RunAs -Wait cmd -ArgumentList '/c netsh advfirewall firewall delete rule name=psnr & netsh advfirewall firewall add rule name=psnr dir=in action=allow protocol=TCP localport=36100 program=\"%~dp0server\psnr.exe\" & netsh advfirewall firewall add rule name=psnr dir=in action=allow protocol=UDP localport=36100 program=\"%~dp0server\psnr.exe\"'" >> "%LOG%" 2>&1
 netsh advfirewall firewall show rule name=psnr >nul 2>&1
 if errorlevel 1 (
   echo The rule was not added. docs\running.md shows the command to run as admin.
 ) else (
-  echo Firewall rule "psnr" added: TCP 36100 for server\psnr.exe.
+  echo Firewall rule "psnr" added: TCP and UDP 36100 for server\psnr.exe.
 )
 
 :done

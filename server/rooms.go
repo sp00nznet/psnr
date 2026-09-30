@@ -33,12 +33,14 @@ type member struct {
 
 // Member entry on the wire:
 // member_id u16 | user_id u32 | online_id [16] | ip [4] | p2p_port u16 | owner u8 | data blob
-func (r *room) putMember(w *writer, m *member) {
+// ip and p2p_port are where `viewer` should send m's traffic (see endpoint).
+func (r *room) putMember(w *writer, m *member, viewer *client) {
 	w.u16(m.id)
 	w.u32(m.c.id)
 	w.str(m.c.onlineID, 16)
-	w.bytes(m.c.ip[:])
-	w.u16(m.c.p2pPort)
+	ip, port := endpoint(m.c, viewer)
+	w.bytes(ip[:])
+	w.u16(port)
 	if m.id == r.owner {
 		w.u8(1)
 	} else {
@@ -70,7 +72,7 @@ func (r *room) joinedReply(req uint32, me *member) []byte {
 	w.blob(r.internal)
 	w.u8(uint8(len(r.members)))
 	for _, m := range r.members {
-		r.putMember(w, m)
+		r.putMember(w, m, me.c)
 	}
 	return w.b
 }
@@ -153,12 +155,12 @@ func (s *Server) joinRoom(c *client, req uint32, rd *reader) (byte, []byte, []pu
 	}
 	me := s.addMember(r, c, mine)
 
-	w := &writer{}
-	w.u64(r.id)
-	r.putMember(w, me)
 	var out []push
 	for _, m := range r.members {
 		if m != me {
+			w := &writer{}
+			w.u64(r.id)
+			r.putMember(w, me, m.c)
 			out = append(out, push{m.c, msgMemberJoined, w.b})
 		}
 	}
