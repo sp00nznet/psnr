@@ -47,11 +47,10 @@ other directly.
     endpoints (#6), with `lab/` reproducing it in Docker.
   - **The relay** (`-relay`): streams into a player behind a router, and
     datagrams when punching fails.
-  - **Simpsons across machines:** a match across two machines on a LAN, and
-    one with the host behind a real NAT.
+  - **Simpsons across machines:** matches across two machines on a LAN,
+    with the host behind a real NAT, and with the joiner behind one (the
+    game setup through the relay).
 - **Next:**
-  - **Simpsons with the joiner behind a NAT:** the game setup stream through
-    the relay.
   - **A guide for the simple case:** forward each player's P2P port, or use a
     tailnet, where every machine can already reach the others.
 - **Later:**
