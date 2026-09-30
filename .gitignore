@@ -1,6 +1,8 @@
 # Build output
 /server/psnr
 /server/psnr.exe
+/server/server
+/server/server.exe
 /psnr
 /psnr.exe
 *.o
