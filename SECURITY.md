@@ -10,6 +10,9 @@ address, the same as on real PSN P2P.
   tailnet, or friends.
 - **The status page** (`-http`, `127.0.0.1:36101` by default) lists every
   connected player's online ID. Don't expose it publicly.
+- **The relay** (`-relay`, off by default) carries traffic between players
+  in the same room. It can't tell what the traffic is, but it does see how
+  much there is and between whom, and it uses the host's bandwidth.
 - **Nothing is stored on disk.**
 
 To report a vulnerability, open a private security advisory on the repository,

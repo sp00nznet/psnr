@@ -37,14 +37,19 @@ enum {
     PSNR_ERROR = 0x8F,
 
     PSNR_MEMBER_JOINED = 0xA1, PSNR_MEMBER_LEFT = 0xA2, PSNR_ROOM_DATA = 0xA3,
-    PSNR_ROOM_MSG = 0xA4, PSNR_KICKED = 0xA5
+    PSNR_ROOM_MSG = 0xA4, PSNR_KICKED = 0xA5,
+
+    /* the relay (docs/api.md, "Relay") */
+    PSNR_STREAM_CONNECT = 0x30, PSNR_STREAM_ACCEPT = 0x31, PSNR_STREAM_READY = 0x96,
+    PSNR_STREAM_OFFER = 0xA6, PSNR_ROUTE = 0xA7
 };
+#define PSNR_ROUTE_STREAM_RELAY 1   /* ROUTE flags: streams to that player go through the relay */
 
 /* ERROR codes */
 enum {
     PSNR_E_BAD_REQUEST = 1, PSNR_E_NOT_FOUND = 2, PSNR_E_ROOM_FULL = 3,
     PSNR_E_NOT_OWNER = 4, PSNR_E_NOT_IN_ROOM = 5, PSNR_E_LIMIT = 6, PSNR_E_NO_HELLO = 7,
-    PSNR_E_NAME_TAKEN = 8
+    PSNR_E_NAME_TAKEN = 8, PSNR_E_NO_RELAY = 9
 };
 
 typedef struct psnr_client psnr_client;
@@ -82,6 +87,24 @@ void psnr_punch_packet(const psnr_client* c, uint8_t out[PSNR_UDP_PUNCH_LEN]);
 int  psnr_is_control(const void* buf, size_t len);
 /* 1 if buf is a probe reply; fills the public endpoint the server saw. */
 int  psnr_probe_reply(const void* buf, size_t len, uint8_t ip[4], uint16_t* port);
+
+/* The relay, for peers that can't reach each other directly. It is there only
+ * if the server runs with -relay.
+ *   Datagrams: wrap a payload for a peer and send it to psnr_server_addr from
+ *   the P2P socket; what comes back from the server unwraps to the sender and
+ *   the payload.
+ *   Streams: when a ROUTE push says a peer takes streams only through the
+ *   relay, psnr_stream_connect opens one to it; the peer gets a STREAM_OFFER
+ *   push (stream_id u32 | from_user u32 | vport u16) and answers with
+ *   psnr_stream_accept. Both return a connected, blocking socket carrying the
+ *   stream's raw bytes (a SOCKET on Windows, an fd elsewhere), or -1. */
+int     psnr_relay_available(const psnr_client* c);
+size_t  psnr_relay_wrap(const psnr_client* c, uint32_t to_user, const void* payload, size_t len,
+                        uint8_t* out, size_t cap);   /* 0 if it doesn't fit */
+int     psnr_relay_unwrap(const void* buf, size_t len, uint32_t* from_user,
+                          const uint8_t** payload, size_t* payload_len);
+int64_t psnr_stream_connect(const psnr_client* c, uint32_t to_user, uint16_t vport, int timeout_ms);
+int64_t psnr_stream_accept(const psnr_client* c, uint32_t stream_id, int timeout_ms);
 
 /* After psnr_connect returned NULL: the ERROR code the server refused the
  * HELLO with (PSNR_E_NAME_TAKEN: another player on the server has that

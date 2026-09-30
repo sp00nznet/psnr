@@ -73,7 +73,7 @@ client's `psnr_poll` sends a HEARTBEAT every 20 seconds.
 
 | Type | Name | Payload (after `req`) |
 |---|---|---|
-| 0x81 | HELLO_ACK | `user_id u32` `public_ip [4]` `token u32` (the token UDP PROBEs carry; 0.3 on) |
+| 0x81 | HELLO_ACK | `user_id u32` `public_ip [4]` `token u32` (the token UDP PROBEs carry; 0.3 on) `flags u8` (bit 0: the server relays; 0.3 on) |
 | 0x93 | OK | — |
 | 0x8F | ERROR | `code u32` |
 
@@ -89,6 +89,7 @@ client's `psnr_poll` sends a HEARTBEAT every 20 seconds.
 | 6 | server room limit reached |
 | 7 | no HELLO yet |
 | 8 | name taken (HELLO): another player on this server has it |
+| 9 | no relay (STREAM_*): the server runs without `-relay` |
 
 ## Rooms
 
@@ -141,6 +142,8 @@ These are modelled on sceNpMatching2 rooms.
 | 0xA3 | ROOM_DATA | `room_id u64` `which u8` `data blob` |
 | 0xA4 | ROOM_MSG | `room_id u64` `from u16` `to u16` (0 = everyone) `data blob` |
 | 0xA5 | KICKED | `room_id u64`, sent to the kicked member only; the rest get MEMBER_LEFT |
+| 0xA6 | STREAM_OFFER | `stream_id u32` `from_user u32` `vport u16`: a relayed stream is waiting for you (see "Relay") |
+| 0xA7 | ROUTE | `room_id u64` `user u32` `flags u8`: how to reach that member; bit 0 set = streams to it go through the relay. Sent to both sides when a member joins, only with `-relay` |
 
 ## Leaderboards
 
@@ -199,6 +202,44 @@ with the four bytes `PSNR` and a type byte.
 A player whose router picks a new public port for every destination
 ("symmetric NAT") can't be reached this way. `lab/` reproduces all of this in
 Docker.
+
+## Relay
+
+For players who can't reach each other directly. The server does this only
+with `-relay`: it costs the host's bandwidth. HELLO_ACK's flags say whether it
+is on.
+
+**Streams.** A player behind a router can't take an incoming connection. The
+server works out who is in that position: a member whose probe came from a
+public address that isn't its own, seen from another network. It tells the
+other members with a ROUTE push when that member joins. To open a stream to
+such a member:
+
+1. Open a new TCP connection to the server and send, as its first message
+   (instead of HELLO), STREAM_CONNECT: `req u32` `user_id u32` `token u32`
+   `to_user u32` `vport u16`.
+2. The target gets a STREAM_OFFER push and opens its own new connection with
+   STREAM_ACCEPT: `req u32` `user_id u32` `token u32` `stream_id u32`.
+3. The server answers both connections with STREAM_READY (0x96, `req u32`),
+   then copies bytes between them until either side closes. From here on
+   there is no framing; the connection is the stream.
+
+Both players must share a room. The target has 10 seconds to accept; after
+that, and on any other failure, the connecting side gets an ERROR instead of
+STREAM_READY.
+
+**Datagrams.** A client that punched a peer but never heard from it directly
+sends through the server's UDP port instead:
+
+| Type | From → to | Payload |
+|---|---|---|
+| 0x03 RELAY | P2P socket → server | `from_user u32` `token u32` `to_user u32` then the datagram |
+| 0x03 RELAY | server → P2P socket | `from_user u32` then the datagram |
+
+The server sends it on from its UDP port to the target's probed endpoint. The
+target's router already lets packets from there in, because the target's
+probes go there. Receivers unwrap it and hand the payload to the title as if
+it came from that member's address.
 
 ## HTTP
 

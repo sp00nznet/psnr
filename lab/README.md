@@ -35,15 +35,20 @@ status is non-zero if any scenario doesn't do what it's expected to.
    hands that endpoint to players on other networks. Players on the same
    network get the LAN address instead.
 3. Host or join a room, which gives it the other player's endpoint.
-4. PUNCH packets and PINGs to that endpoint until a PONG comes back.
+4. PUNCH packets and PINGs to that endpoint until a PONG comes back. If
+   nothing arrives from the peer directly within 3 seconds, the pings go
+   through the server's relay.
+5. A stream from host to joiner, as a title sends its game setup: directly,
+   or through the relay when the server's ROUTE push says so.
 
 ## Scenarios
 
 | Scenario | Setup | Expected |
 |---|---|---|
-| `cone` | alice and bob in different homes, ordinary routers | pass |
-| `symmetric` | bob's router picks a new public port for every destination | **fail**: the endpoint the server saw is useless to alice. A relay is what fixes this; the scenario stays until psnr has one. |
-| `samelan` | alice and carol in the same home | pass, over their LAN addresses |
+| `cone` | alice and bob in different homes, ordinary routers | pass: pings go direct; bob can't take a direct stream behind his router, so the stream goes through the relay |
+| `symmetric` | bob's router picks a new public port for every destination | pass: the endpoint the server saw is useless to alice, so pings fall back to the relay after 3 seconds, and so does the stream |
+| `symmetric-norelay` | the same, with the server run without `-relay` | **fail**: what the relay is for |
+| `samelan` | alice and carol in the same home | pass: pings and the stream go direct over their LAN addresses |
 
 ## What the routers model
 

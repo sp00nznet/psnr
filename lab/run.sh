@@ -3,10 +3,15 @@
 #
 #   cone       alice and bob in two homes behind ordinary routers. The server
 #              hands each the other's public endpoint, they punch, and ping
-#              gets through. Expected to pass.
+#              gets through; bob can't take a direct stream behind his
+#              router, so the host's stream goes through the relay. Expected
+#              to pass.
 #   symmetric  bob's router picks a new port per destination, so the endpoint
-#              the server saw is useless to alice. Expected to FAIL until
-#              psnr has a relay; kept to show what the relay is for.
+#              the server saw is useless to alice. Pings go through the
+#              server's relay instead. Expected to pass.
+#   symmetric-norelay
+#              the same without -relay. Expected to FAIL: this is what the
+#              relay is for.
 #   samelan    alice and carol in the same home. The server gives carol
 #              alice's LAN address, not their shared public one. Expected to
 #              pass.
@@ -35,7 +40,7 @@ scenario() {   # name expect "players" [VAR=value ...]
   for p in $players; do
     [ "$(docker wait "psnr-lab-$p-1")" = 0 ] || got=fail
   done
-  compose logs --no-log-prefix $players | grep -E "seen at|other player|PASS|FAIL"
+  compose logs --no-log-prefix $players | grep -E "seen at|other player|relay|PASS|FAIL"
   if [ "$name" = samelan ] && ! compose logs carol | grep -q "other player is at 192.168.10.10:"; then
     echo "carol wasn't given alice's LAN address"
     got=fail
@@ -43,10 +48,11 @@ scenario() {   # name expect "players" [VAR=value ...]
   if [ "$got" = "$expect" ]; then echo "-> $got, as expected"; else echo "-> $got, expected $expect"; bad=1; fi
 }
 
-for s in ${@:-cone symmetric samelan}; do
+for s in ${@:-cone symmetric symmetric-norelay samelan}; do
   case $s in
     cone)      scenario cone pass "alice bob" ;;
-    symmetric) scenario symmetric fail "alice bob" NAT_B=symmetric ;;
+    symmetric) scenario symmetric pass "alice bob" NAT_B=symmetric ;;
+    symmetric-norelay) scenario symmetric-norelay fail "alice bob" NAT_B=symmetric RELAY=false ;;
     samelan)   scenario samelan pass "alice carol" ;;
     *)         echo "unknown scenario $s"; bad=1 ;;
   esac
