@@ -18,9 +18,11 @@ func main() {
 	httpAddr := flag.String("http", "127.0.0.1:36101", "HTTP status page and /api/stats (empty to disable)")
 	maxRooms := flag.Int("max-rooms", 1000, "room limit across all titles")
 	verbose := flag.Bool("v", false, "log every room event")
+	relay := flag.Bool("relay", false, "carry traffic between players who can't reach each other directly (uses this server's bandwidth)")
 	flag.Parse()
 
 	s := NewServer(*maxRooms, *verbose)
+	s.relay = *relay
 	ln, err := net.Listen("tcp", *addr)
 	if err != nil {
 		log.Fatal(err)

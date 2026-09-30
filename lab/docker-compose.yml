@@ -23,7 +23,7 @@ services:
   server:
     image: psnr-lab-server
     pull_policy: never
-    command: [ "-v" ]
+    command: [ "-v", "-relay=${RELAY:-true}" ]
     networks: { internet: { ipv4_address: 10.99.0.10 } }
 
   router_a:

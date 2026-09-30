@@ -26,13 +26,17 @@ const (
 )
 
 func (s *Server) ServeUDP(pc net.PacketConn) error {
-	buf := make([]byte, 64)
+	buf := make([]byte, 65536)
 	for {
 		n, addr, err := pc.ReadFrom(buf)
 		if err != nil {
 			return err
 		}
 		ua, ok := addr.(*net.UDPAddr)
+		if ok && n >= 5 && string(buf[:4]) == udpMagic && buf[4] == udpRelay {
+			s.relayUDP(pc, buf[:n])
+			continue
+		}
 		if !ok || n < 17 || string(buf[:4]) != udpMagic || buf[4] != udpProbe {
 			continue
 		}

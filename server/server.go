@@ -21,6 +21,7 @@ const clientTimeout = 90 * time.Second // HELLO/HEARTBEAT keep a client alive
 
 type Server struct {
 	verbose bool
+	relay   bool // -relay: carry traffic for players who can't reach each other (relay.go)
 
 	// ponytail: one lock for everything; per-title locks if one server ever
 	// carries enough titles for it to show.
@@ -33,6 +34,10 @@ type Server struct {
 	maxRooms int
 	started  time.Time
 	conns    uint64
+
+	streams    map[uint32]*stream // relay streams waiting for their target to accept
+	nextStream uint32
+	relayed    uint64 // bytes carried by the relay (atomic)
 }
 
 type client struct {
@@ -62,6 +67,7 @@ func NewServer(maxRooms int, verbose bool) *Server {
 		clients:  map[uint32]*client{},
 		rooms:    map[uint64]*room{},
 		boards:   map[boardKey]*board{},
+		streams:  map[uint32]*stream{},
 		maxRooms: maxRooms,
 		started:  time.Now(),
 	}
@@ -87,7 +93,11 @@ func (s *Server) Serve(ln net.Listener) error {
 }
 
 func (s *Server) run(c *client) {
+	relayLeg := false // a relay stream connection, not a player
 	defer func() {
+		if relayLeg {
+			return
+		}
 		c.conn.Close()
 		s.mu.Lock()
 		var out []push
@@ -100,12 +110,22 @@ func (s *Server) run(c *client) {
 		s.logf("client %d (%s) gone", c.id, c.onlineID)
 	}()
 
-	for {
+	for first := true; ; first = false {
 		c.conn.SetReadDeadline(time.Now().Add(clientTimeout))
 		t, p, err := readPacket(c.conn)
 		if err != nil {
 			if err != io.EOF {
 				s.logf("client %d read: %v", c.id, err)
+			}
+			return
+		}
+		if first && (t == msgStreamConnect || t == msgStreamAccept) {
+			relayLeg = true
+			s.mu.Lock()
+			delete(s.clients, c.id)
+			s.mu.Unlock()
+			if !s.streamLeg(c.conn, t, p) {
+				c.conn.Close()
 			}
 			return
 		}
@@ -194,6 +214,11 @@ func (s *Server) hello(c *client, req uint32, r *reader) (byte, []byte) {
 	w.u32(c.id)
 	w.bytes(c.ip[:])
 	w.u32(c.token)
+	var flags uint8
+	if s.relay {
+		flags |= 1 // the relay is available
+	}
+	w.u8(flags)
 	return msgHelloAck, w.b
 }
 

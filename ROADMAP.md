@@ -39,19 +39,25 @@ It is **not** a public PSN replacement, and won't grow into one:
 
 ## 2. Across the internet
 
-Everything so far has run on one machine. Friends in different homes are
-behind routers, and peers connect to each other directly.
+Friends in different homes are behind routers, and peers connect to each
+other directly.
 
-- **A guide for the simple case:** forward each player's P2P port, or use a
-  tailnet, where every machine can already reach the others.
-- **UPnP:** open the P2P port on the player's router automatically.
-- **Hole punching:** psnr already sees each player's public address. It can
-  tell both peers to send to each other at once, so their routers let the
-  replies in.
-- **Relay fallback:** an optional server flag to carry game traffic for
-  players who can't reach each other directly. It is off by default, because
-  it costs the host bandwidth.
-- **Verify** a Simpsons match across two machines, then two networks.
+- **Done:**
+  - **Address discovery and hole punching:** UDP probes and per-viewer
+    endpoints (#6), with `lab/` reproducing it in Docker.
+  - **The relay** (`-relay`): streams into a player behind a router, and
+    datagrams when punching fails.
+  - **Simpsons across machines:** a match across two machines on a LAN, and
+    one with the host behind a real NAT.
+- **Next:**
+  - **Simpsons with the joiner behind a NAT:** the game setup stream through
+    the relay.
+  - **A guide for the simple case:** forward each player's P2P port, or use a
+    tailnet, where every machine can already reach the others.
+- **Later:**
+  - **UPnP:** open the P2P port on the player's router automatically.
+  - **P2P streams over UDP**, as a console does it, if a title needs direct
+    low-latency streams.
 
 ## 3. Friends and invites (sceNpBasic)
 

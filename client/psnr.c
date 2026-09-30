@@ -67,6 +67,7 @@ struct psnr_client {
     time_t   last_send;
     int      dead;
     uint32_t user_id, token;              /* from HELLO_ACK; UDP probes carry them */
+    int      relay;                       /* HELLO_ACK: the server relays */
     uint8_t  server_ip[4], local_ip[4];   /* the TCP connection's two ends */
     uint16_t server_port;
 };
@@ -253,6 +254,7 @@ psnr_client* psnr_connect(const char* host, uint16_t port,
     s_connect_error = (ack.type == PSNR_ERROR && ack.len >= 4) ? (int)psnr_get32(ack.data) : 0;
     if (ok) c->user_id = psnr_get32(ack.data);
     if (ok && ack.len >= 12) c->token = psnr_get32(ack.data + 8);
+    if (ok && ack.len >= 13) c->relay = ack.data[12] & 1;
     if (ok && out_user_id) *out_user_id = psnr_get32(ack.data);
     if (ok && out_public_ip) memcpy(out_public_ip, ack.data + 4, 4);
     psnr_msg_free(&ack);
@@ -294,6 +296,106 @@ int psnr_probe_reply(const void* buf, size_t len, uint8_t ip[4], uint16_t* port)
     memcpy(ip, p + 5, 4);
     *port = psnr_get16(p + 9);
     return 1;
+}
+
+int psnr_relay_available(const psnr_client* c)
+{
+    return c->relay;
+}
+
+/* "PSNR" 03 | from u32 | token u32 | to u32 | payload */
+size_t psnr_relay_wrap(const psnr_client* c, uint32_t to_user, const void* payload, size_t len,
+                       uint8_t* out, size_t cap)
+{
+    if (cap < 17 + len) return 0;
+    memcpy(out, "PSNR", 4);
+    out[4] = 0x03;
+    psnr_put32(out + 5, c->user_id);
+    psnr_put32(out + 9, c->token);
+    psnr_put32(out + 13, to_user);
+    memcpy(out + 17, payload, len);
+    return 17 + len;
+}
+
+/* from the server: "PSNR" 03 | from u32 | payload */
+int psnr_relay_unwrap(const void* buf, size_t len, uint32_t* from_user,
+                      const uint8_t** payload, size_t* payload_len)
+{
+    const uint8_t* p = (const uint8_t*)buf;
+    if (len < 9 || !psnr_is_control(p, len) || p[4] != 0x03) return 0;
+    *from_user = psnr_get32(p + 5);
+    *payload = p + 9;
+    *payload_len = len - 9;
+    return 1;
+}
+
+/* A relay leg: a fresh connection to the server whose first message is
+ * STREAM_CONNECT or STREAM_ACCEPT, returned once the server says READY. */
+static int64_t stream_leg(const psnr_client* c, uint8_t type, const uint8_t* body, uint16_t len,
+                          int timeout_ms)
+{
+    struct sockaddr_in a;
+    uint8_t f[64], hdr[3];
+    pollfd_t pfd;
+    int one = 1;
+    sock_t s = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (s == BAD_SOCK) return -1;
+    memset(&a, 0, sizeof(a));
+    a.sin_family = AF_INET;
+    memcpy(&a.sin_addr, c->server_ip, 4);
+    a.sin_port = htons(c->server_port);
+    if (connect(s, (struct sockaddr*)&a, sizeof(a)) != 0) goto fail;
+    setsockopt(s, IPPROTO_TCP, TCP_NODELAY, (const char*)&one, sizeof(one));
+
+    f[0] = type;
+    psnr_put16(f + 1, (uint16_t)(4 + len));
+    psnr_put32(f + 3, 1);
+    memcpy(f + 7, body, len);
+    if (send(s, (const char*)f, 7 + len, 0) != 7 + len) goto fail;
+
+    /* The reply: READY, or an ERROR. The server waits up to 10 s for the
+     * other side to accept. */
+    for (int got = 0; got < 3; ) {
+        pfd.fd = s;
+        pfd.events = POLLIN;
+        pfd.revents = 0;
+        if (poll(&pfd, 1, timeout_ms) <= 0) goto fail;
+        int n = (int)recv(s, (char*)hdr + got, 3 - got, 0);
+        if (n <= 0) goto fail;
+        got += n;
+    }
+    uint16_t plen = psnr_get16(hdr + 1);
+    for (uint16_t got = 0; got < plen; ) {   /* req u32 (+ an error code) */
+        uint8_t skip[16];
+        int want = plen - got > (int)sizeof(skip) ? (int)sizeof(skip) : plen - got;
+        int n = (int)recv(s, (char*)skip, want, 0);
+        if (n <= 0) goto fail;
+        got = (uint16_t)(got + n);
+    }
+    if (hdr[0] != PSNR_STREAM_READY) goto fail;
+    return (int64_t)s;
+fail:
+    sock_close(s);
+    return -1;
+}
+
+int64_t psnr_stream_connect(const psnr_client* c, uint32_t to_user, uint16_t vport, int timeout_ms)
+{
+    uint8_t b[14];
+    psnr_put32(b, c->user_id);
+    psnr_put32(b + 4, c->token);
+    psnr_put32(b + 8, to_user);
+    psnr_put16(b + 12, vport);
+    return stream_leg(c, PSNR_STREAM_CONNECT, b, sizeof(b), timeout_ms);
+}
+
+int64_t psnr_stream_accept(const psnr_client* c, uint32_t stream_id, int timeout_ms)
+{
+    uint8_t b[12];
+    psnr_put32(b, c->user_id);
+    psnr_put32(b + 4, c->token);
+    psnr_put32(b + 8, stream_id);
+    return stream_leg(c, PSNR_STREAM_ACCEPT, b, sizeof(b), timeout_ms);
 }
 
 /* ponytail: one static, not per connection -- a process connects once. */

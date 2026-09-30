@@ -59,6 +59,7 @@ const (
 	errLimitReached = 6
 	errNoHello      = 7
 	errNameTaken    = 8 // HELLO: another player on this server has the name
+	errNoRelay      = 9 // STREAM_*: the server runs without -relay
 )
 
 const maxPayload = 0xFFFF

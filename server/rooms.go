@@ -164,6 +164,13 @@ func (s *Server) joinRoom(c *client, req uint32, rd *reader) (byte, []byte, []pu
 			out = append(out, push{m.c, msgMemberJoined, w.b})
 		}
 	}
+	if s.relay { // which of them each side must reach through the relay
+		for _, m := range r.members {
+			if m != me {
+				out = append(out, s.routePush(r, m.c, c), s.routePush(r, c, m.c))
+			}
+		}
+	}
 	s.logf("room %d: %s joined as member %d", r.id, c.onlineID, me.id)
 	return msgRoomJoined, r.joinedReply(req, me), out
 }

@@ -24,6 +24,15 @@ All notable changes to this project are documented here. The format follows
   reads the packets (`psnr_probe_packet`, `psnr_punch_packet`,
   `psnr_probe_reply`, `psnr_is_control`); the caller sends them from its own
   P2P socket. Protocol in `docs/api.md`, "UDP".
+- The relay (`-relay`, off by default), for players who can't reach each other
+  directly. Streams into a player behind a router go through the server
+  (STREAM_CONNECT / STREAM_OFFER / STREAM_ACCEPT / STREAM_READY), and ROUTE
+  pushes say which members need it. Datagrams go through the server's UDP
+  port (RELAY) when punching doesn't get through, as with a symmetric NAT.
+  HELLO_ACK gains a flags byte saying whether the relay is on. The C client
+  wraps and unwraps relayed datagrams and opens and accepts relayed streams.
+  In the lab, the symmetric-NAT scenario now passes, and every scenario also
+  runs a host-to-joiner stream.
 - `lab/`: a NAT lab in Docker. A psnr server on a pretend internet, headless
   players behind NATing routers, and three scenarios: two homes (passes), a
   symmetric NAT (fails until psnr has a relay), and two players in one home
