@@ -33,7 +33,7 @@ func TestCClient(t *testing.T) {
 		t.Fatalf("%s: %v\n%s", cc, err, out)
 	}
 
-	addr := start(t)
+	_, addr := startTCPUDP(t)
 	_, port, _ := net.SplitHostPort(addr)
 	out, err := exec.Command(exe, "127.0.0.1", port).CombinedOutput()
 	if err != nil || !strings.Contains(string(out), "all passed") {

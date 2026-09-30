@@ -66,6 +66,9 @@ struct psnr_client {
     node    *head, *tail; /* framed messages waiting for psnr_poll */
     time_t   last_send;
     int      dead;
+    uint32_t user_id, token;              /* from HELLO_ACK; UDP probes carry them */
+    uint8_t  server_ip[4], local_ip[4];   /* the TCP connection's two ends */
+    uint16_t server_port;
 };
 
 static int send_all(psnr_client* c, const uint8_t* p, size_t n)
@@ -222,6 +225,18 @@ psnr_client* psnr_connect(const char* host, uint16_t port,
 
     psnr_client* c = (psnr_client*)calloc(1, sizeof(psnr_client));
     c->s = s;
+    {   /* UDP goes to the same server address and port; the local end is
+         * this machine's address on the way to the server, for peers on the
+         * same network. */
+        struct sockaddr_in a;
+        socklen_t n = sizeof(a);
+        if (getpeername(s, (struct sockaddr*)&a, &n) == 0) {
+            memcpy(c->server_ip, &a.sin_addr, 4);
+            c->server_port = ntohs(a.sin_port);
+        }
+        n = sizeof(a);
+        if (getsockname(s, (struct sockaddr*)&a, &n) == 0) memcpy(c->local_ip, &a.sin_addr, 4);
+    }
 
     /* HELLO: comm_id [12] | online_id [16] | p2p_port u16 */
     uint8_t hello[30] = {0};
@@ -236,11 +251,49 @@ psnr_client* psnr_connect(const char* host, uint16_t port,
     }
     int ok = ack.type == PSNR_HELLO_ACK && ack.len >= 8;
     s_connect_error = (ack.type == PSNR_ERROR && ack.len >= 4) ? (int)psnr_get32(ack.data) : 0;
+    if (ok) c->user_id = psnr_get32(ack.data);
+    if (ok && ack.len >= 12) c->token = psnr_get32(ack.data + 8);
     if (ok && out_user_id) *out_user_id = psnr_get32(ack.data);
     if (ok && out_public_ip) memcpy(out_public_ip, ack.data + 4, 4);
     psnr_msg_free(&ack);
     if (!ok) { psnr_close(c); return NULL; }
     return c;
+}
+
+void psnr_server_addr(const psnr_client* c, uint8_t ip[4], uint16_t* port)
+{
+    memcpy(ip, c->server_ip, 4);
+    *port = c->server_port;
+}
+
+void psnr_probe_packet(const psnr_client* c, uint8_t out[PSNR_UDP_PROBE_LEN])
+{
+    memcpy(out, "PSNR", 4);
+    out[4] = 0x01;
+    psnr_put32(out + 5, c->user_id);
+    psnr_put32(out + 9, c->token);
+    memcpy(out + 13, c->local_ip, 4);
+}
+
+void psnr_punch_packet(const psnr_client* c, uint8_t out[PSNR_UDP_PUNCH_LEN])
+{
+    memcpy(out, "PSNR", 4);
+    out[4] = 0x02;
+    psnr_put32(out + 5, c->user_id);
+}
+
+int psnr_is_control(const void* buf, size_t len)
+{
+    return len >= 5 && memcmp(buf, "PSNR", 4) == 0;
+}
+
+int psnr_probe_reply(const void* buf, size_t len, uint8_t ip[4], uint16_t* port)
+{
+    const uint8_t* p = (const uint8_t*)buf;
+    if (len < 11 || !psnr_is_control(p, len) || p[4] != 0x81) return 0;
+    memcpy(ip, p + 5, 4);
+    *port = psnr_get16(p + 9);
+    return 1;
 }
 
 /* ponytail: one static, not per connection -- a process connects once. */

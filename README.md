@@ -115,6 +115,7 @@ by the others.
   no threads, and why game traffic doesn't go through the server
 - [docs/api.md](docs/api.md): the protocol
 - [docs/running.md](docs/running.md): flags, ports, Docker, state
+- [lab/](lab/README.md): players behind NATing routers, in Docker (`lab/run.sh`)
 
 ## Building from source
 

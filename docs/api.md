@@ -31,11 +31,21 @@ Field notation used below:
 member_id u16 | user_id u32 | online_id [16] | ip [4] | p2p_port u16 | owner u8 | data blob
 ```
 
-The `ip` field is the address the server sees the member connecting from. The
-`p2p_port` is the port that member sent in HELLO. `data` is the member's own
-data (Matching2 member bin attributes), set when it creates or joins the room. Together they give peers each
-other's addresses. Game traffic goes between peers directly; the server never
-carries it.
+`ip` and `p2p_port` are where the player receiving the entry should send
+that member's P2P traffic, so two players can be given different addresses for
+the same member:
+- **From another network** (a different public address), once the member's
+  P2P socket has sent a UDP PROBE (below): the public address and port the
+  probe came from, which is its router's mapping.
+- **From the same network** (the same public address): the member's LAN
+  address from its probe and the port it sent in HELLO. Most routers can't
+  loop traffic back in to their own public address.
+- **Without a probe:** the address the server sees the member's TCP
+  connection come from, and the port it sent in HELLO.
+
+`data` is the member's own data (Matching2 member bin attributes), set when it
+creates or joins the room. Game traffic goes between peers directly; the
+server never carries it.
 
 ## Session
 
@@ -63,7 +73,7 @@ client's `psnr_poll` sends a HEARTBEAT every 20 seconds.
 
 | Type | Name | Payload (after `req`) |
 |---|---|---|
-| 0x81 | HELLO_ACK | `user_id u32` `public_ip [4]` |
+| 0x81 | HELLO_ACK | `user_id u32` `public_ip [4]` `token u32` (the token UDP PROBEs carry; 0.3 on) |
 | 0x93 | OK | — |
 | 0x8F | ERROR | `code u32` |
 
@@ -161,6 +171,34 @@ These are modelled on sceNpScore.
 |---|---|---|
 | 0xB0 | SCORE_RECORDED | `rank u32`: the player's rank after recording (their best stands if this one is worse) |
 | 0xB1 | RANKING | `total u32` `count u16`, then `count` × (`rank u32` `online_id [16]` `score s64` `comment blob` `recorded_unix u64`) |
+
+## UDP
+
+The server also listens on UDP, on the same port as TCP (36100). This is how a
+player behind a router gets reachable: the router gives the title's P2P
+socket a public port that the server can't see over TCP. Every packet starts
+with the four bytes `PSNR` and a type byte.
+
+| Type | Name | From → to | Payload |
+|---|---|---|---|
+| 0x01 | PROBE | P2P socket → server | `user_id u32` `token u32` `local_ip [4]` |
+| 0x81 | PROBE_REPLY | server → P2P socket | `public_ip [4]` `public_port u16` |
+| 0x02 | PUNCH | P2P socket → peer | `user_id u32` |
+
+- **PROBE.** Sent from the P2P socket after HELLO, repeated until a
+  PROBE_REPLY arrives, and again now and then, because routers forget idle
+  mappings. `user_id` and `token` come from HELLO_ACK; a probe with the wrong
+  token is ignored, so nobody can move another player's endpoint. `local_ip`
+  is the client's own address, given to players on the same network.
+- **PUNCH.** When a peer appears, a few of these sent to the address its
+  member entry gives open this side's router for the peer's traffic. Both
+  sides do it.
+- **Receiving.** Anything starting with `PSNR` is a control packet; the
+  runtime drops it before the title sees it.
+
+A player whose router picks a new public port for every destination
+("symmetric NAT") can't be reached this way. `lab/` reproduces all of this in
+Docker.
 
 ## HTTP
 
