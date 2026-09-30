@@ -10,6 +10,7 @@ import (
 	"log"
 	"net"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 )
@@ -160,6 +161,21 @@ func (s *Server) hello(c *client, req uint32, r *reader) (byte, []byte) {
 	commID, onlineID, port := r.str(12), r.str(16), r.u16()
 	if r.err != nil || commID == "" {
 		return msgError, errReply(req, errBadRequest)
+	}
+	// One player per name, as PSN IDs are unique, compared case-insensitively
+	// like them. The same name from the same address is the same player
+	// reconnecting -- a title that crashed and restarted -- whose old
+	// connection can linger until clientTimeout, so it gives way.
+	for _, o := range s.clients {
+		if o == c || o.commID == "" || !strings.EqualFold(o.onlineID, onlineID) {
+			continue
+		}
+		if o.ip != c.ip {
+			return msgError, errReply(req, errNameTaken)
+		}
+		log.Printf("client %d: %q reconnected as client %d", o.id, onlineID, c.id)
+		o.commID = "" // no longer counts; its run loop cleans up once Close lands
+		o.conn.Close()
 	}
 	c.commID, c.onlineID, c.p2pPort = commID, onlineID, port
 	log.Printf("client %d: %s as %q from %d.%d.%d.%d, p2p port %d",

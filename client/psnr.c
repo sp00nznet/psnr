@@ -181,6 +181,8 @@ void psnr_msg_free(psnr_msg* m)
     m->data = NULL;
 }
 
+static int s_connect_error;
+
 psnr_client* psnr_connect(const char* host, uint16_t port,
                           const char* comm_id, const char* online_id, uint16_t p2p_port,
                           uint32_t* out_user_id, uint8_t out_public_ip[4])
@@ -227,16 +229,24 @@ psnr_client* psnr_connect(const char* host, uint16_t port,
     strncpy((char*)hello + 12, online_id, 16);
     psnr_put16(hello + 28, p2p_port);
     psnr_msg ack;
+    s_connect_error = 0;
     if (psnr_call(c, PSNR_HELLO, hello, sizeof(hello), &ack, 5000) != 1) {
         psnr_close(c);
         return NULL;
     }
     int ok = ack.type == PSNR_HELLO_ACK && ack.len >= 8;
+    s_connect_error = (ack.type == PSNR_ERROR && ack.len >= 4) ? (int)psnr_get32(ack.data) : 0;
     if (ok && out_user_id) *out_user_id = psnr_get32(ack.data);
     if (ok && out_public_ip) memcpy(out_public_ip, ack.data + 4, 4);
     psnr_msg_free(&ack);
     if (!ok) { psnr_close(c); return NULL; }
     return c;
+}
+
+/* ponytail: one static, not per connection -- a process connects once. */
+int psnr_connect_error(void)
+{
+    return s_connect_error;
 }
 
 void psnr_close(psnr_client* c)
