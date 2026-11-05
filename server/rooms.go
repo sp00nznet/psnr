@@ -12,6 +12,20 @@ import (
 	"time"
 )
 
+// maxRoomBlob caps each blob a client puts in a room: attributes, member data
+// and room messages. Matching2 attributes are small; game files do not belong
+// on the wire.
+const maxRoomBlob = 4096
+
+func tooBig(blobs ...[]byte) bool {
+	for _, b := range blobs {
+		if len(b) > maxRoomBlob {
+			return true
+		}
+	}
+	return false
+}
+
 type room struct {
 	id         uint64
 	commID     string
@@ -87,10 +101,10 @@ func (s *Server) addMember(r *room, c *client, data []byte) *member {
 
 func (s *Server) createRoom(c *client, req uint32, rd *reader) (byte, []byte) {
 	max, flags, ext, in, mine := rd.u8(), rd.u32(), rd.blob(), rd.blob(), rd.blob()
-	if rd.err != nil || max == 0 {
+	if rd.err != nil || max == 0 || tooBig(ext, in, mine) {
 		return msgError, errReply(req, errBadRequest)
 	}
-	if len(s.rooms) >= s.maxRooms {
+	if len(s.rooms) >= s.maxRooms || s.maxPlayerRooms > 0 && len(c.rooms) >= s.maxPlayerRooms {
 		return msgError, errReply(req, errLimitReached)
 	}
 	s.nextRoom++
@@ -144,7 +158,7 @@ func (s *Server) joinRoom(c *client, req uint32, rd *reader) (byte, []byte, []pu
 	id, mine := rd.u64(), rd.blob()
 	r, ok := s.rooms[id]
 	switch {
-	case rd.err != nil:
+	case rd.err != nil || tooBig(mine):
 		return msgError, errReply(req, errBadRequest), nil
 	case !ok || r.commID != c.commID:
 		return msgError, errReply(req, errNotFound), nil
@@ -152,6 +166,8 @@ func (s *Server) joinRoom(c *client, req uint32, rd *reader) (byte, []byte, []pu
 		return msgRoomJoined, r.joinedReply(req, r.memberOf(c)), nil
 	case len(r.members) >= int(r.max):
 		return msgError, errReply(req, errRoomFull), nil
+	case s.maxPlayerRooms > 0 && len(c.rooms) >= s.maxPlayerRooms:
+		return msgError, errReply(req, errLimitReached), nil
 	}
 	me := s.addMember(r, c, mine)
 
@@ -227,7 +243,7 @@ func (s *Server) setRoomData(c *client, req uint32, rd *reader) (byte, []byte, [
 	r, ok := s.rooms[rd.u64()]
 	which, data := rd.u8(), rd.blob()
 	switch {
-	case rd.err != nil || which > 2 || which == 2 && len(data) != 4:
+	case rd.err != nil || which > 2 || which == 2 && len(data) != 4 || tooBig(data):
 		return msgError, errReply(req, errBadRequest), nil
 	case !ok || r.memberOf(c) == nil:
 		return msgError, errReply(req, errNotInRoom), nil
@@ -260,7 +276,7 @@ func (s *Server) setRoomData(c *client, req uint32, rd *reader) (byte, []byte, [
 func (s *Server) roomMessage(c *client, req uint32, rd *reader) (byte, []byte, []push) {
 	r, ok := s.rooms[rd.u64()]
 	to, data := rd.u16(), rd.blob()
-	if rd.err != nil {
+	if rd.err != nil || tooBig(data) {
 		return msgError, errReply(req, errBadRequest), nil
 	}
 	if !ok || r.memberOf(c) == nil {

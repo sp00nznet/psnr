@@ -35,6 +35,11 @@ type Server struct {
 	started  time.Time
 	conns    uint64
 
+	maxPlayerRooms int            // rooms one player may be in at once
+	maxPerAddr     int            // open connections per remote address
+	maxReqRate     int            // requests per second per connection
+	addrConns      map[string]int // open connections by remote host
+
 	streams    map[uint32]*stream // relay streams waiting for their target to accept
 	nextStream uint32
 	relayed    uint64 // bytes carried by the relay (atomic)
@@ -70,6 +75,11 @@ func NewServer(maxRooms int, verbose bool) *Server {
 		streams:  map[uint32]*stream{},
 		maxRooms: maxRooms,
 		started:  time.Now(),
+
+		maxPlayerRooms: 8,
+		maxPerAddr:     32,
+		maxReqRate:     200,
+		addrConns:      map[string]int{},
 	}
 }
 
@@ -79,7 +89,15 @@ func (s *Server) Serve(ln net.Listener) error {
 		if err != nil {
 			return err
 		}
+		host, _, _ := net.SplitHostPort(conn.RemoteAddr().String())
 		s.mu.Lock()
+		if s.maxPerAddr > 0 && s.addrConns[host] >= s.maxPerAddr {
+			s.mu.Unlock()
+			s.logf("%s: too many connections, refused", host)
+			conn.Close()
+			continue
+		}
+		s.addrConns[host]++
 		s.nextID++
 		s.conns++
 		c := &client{id: s.nextID, conn: conn, rooms: map[uint64]*room{}}
@@ -88,7 +106,14 @@ func (s *Server) Serve(ln net.Listener) error {
 		}
 		s.clients[c.id] = c
 		s.mu.Unlock()
-		go s.run(c)
+		go func() {
+			s.run(c)
+			s.mu.Lock()
+			if s.addrConns[host]--; s.addrConns[host] <= 0 {
+				delete(s.addrConns, host)
+			}
+			s.mu.Unlock()
+		}()
 	}
 }
 
@@ -110,6 +135,7 @@ func (s *Server) run(c *client) {
 		s.logf("client %d (%s) gone", c.id, c.onlineID)
 	}()
 
+	windowStart, inWindow := time.Now(), 0
 	for first := true; ; first = false {
 		c.conn.SetReadDeadline(time.Now().Add(clientTimeout))
 		t, p, err := readPacket(c.conn)
@@ -127,6 +153,13 @@ func (s *Server) run(c *client) {
 			if !s.streamLeg(c.conn, t, p) {
 				c.conn.Close()
 			}
+			return
+		}
+		if now := time.Now(); now.Sub(windowStart) >= time.Second {
+			windowStart, inWindow = now, 0
+		}
+		if inWindow++; s.maxReqRate > 0 && inWindow > s.maxReqRate {
+			s.logf("client %d: more than %d requests a second, closed", c.id, s.maxReqRate)
 			return
 		}
 		s.handle(c, t, p)

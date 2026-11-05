@@ -66,6 +66,12 @@ server never carries it.
 
 HELLO must come first. Any other request before it gets ERROR 7.
 
+**Limits:** every blob a client puts in a room (CREATE_ROOM, JOIN_ROOM, SET_ROOM_DATA,
+ROOM_MESSAGE) is at most 4096 bytes, else error 1. Game files do not go over the wire.
+The server refuses connections beyond `-max-conns-per-addr` (default 32) from one
+address and closes a connection that sends more than `-max-req-rate` (default 200)
+requests in a second.
+
 **Timeout:** a connection that sends nothing for 90 seconds is dropped. The C
 client's `psnr_poll` sends a HEARTBEAT every 20 seconds.
 
@@ -86,7 +92,7 @@ client's `psnr_poll` sends a HEARTBEAT every 20 seconds.
 | 3 | room full |
 | 4 | not the room owner |
 | 5 | not in that room |
-| 6 | server room limit reached |
+| 6 | limit reached: the server's room limit, or the player is already in `-max-player-rooms` rooms |
 | 7 | no HELLO yet |
 | 8 | name taken (HELLO): another player on this server has it |
 | 9 | no relay (STREAM_*): the server runs without `-relay` |
