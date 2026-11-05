@@ -9,7 +9,8 @@ address, the same as on real PSN P2P.
   any online ID. Run it for people you'd let onto your network: a LAN, a
   tailnet, or friends.
 - **The status page** (`-http`, `127.0.0.1:36101` by default) lists every
-  connected player's online ID. Don't expose it publicly.
+  connected player's online ID. Don't expose it publicly. If you bind it
+  beyond localhost, set `-http-token`; the server warns when you don't.
 - **The relay** (`-relay`, off by default) carries traffic between players
   in the same room. It can't tell what the traffic is, but it does see how
   much there is and between whom, and it uses the host's bandwidth.

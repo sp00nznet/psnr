@@ -5,11 +5,14 @@ package main
 // every player's online ID.
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"fmt"
 	"html/template"
+	"net"
 	"net/http"
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -81,6 +84,32 @@ td,th{text-align:left;padding:4px 8px;border-bottom:1px solid #8884}</style>
 <h2>Leaderboards</h2><table><tr><th>Title<th>Board<th>Entries<th>Leader</tr>
 {{range .Boards}}<tr><td>{{.Title}}<td>{{.Board}}<td>{{.Entries}}<td>{{.Leader}} ({{.Best}})</tr>{{else}}<tr><td colspan=4>none</tr>{{end}}</table>`))
 
+// reachable reports whether an -http address listens beyond this machine.
+func reachable(addr string) bool {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return true
+	}
+	if host == "localhost" {
+		return false
+	}
+	ip := net.ParseIP(host)
+	return ip == nil || !ip.IsLoopback() // "" and "0.0.0.0" listen everywhere
+}
+
+// authorized checks the -http-token: an "Authorization: Bearer" header or a
+// ?token= query (which survives the page's meta refresh).
+func (s *Server) authorized(r *http.Request) bool {
+	if s.httpToken == "" {
+		return true
+	}
+	got := r.URL.Query().Get("token")
+	if h, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer "); ok {
+		got = h
+	}
+	return subtle.ConstantTimeCompare([]byte(got), []byte(s.httpToken)) == 1
+}
+
 func (s *Server) HTTP() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/stats", func(w http.ResponseWriter, r *http.Request) {
@@ -96,5 +125,11 @@ func (s *Server) HTTP() http.Handler {
 			fmt.Fprintln(w, err)
 		}
 	})
-	return mux
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !s.authorized(r) {
+			http.Error(w, "token required", http.StatusUnauthorized)
+			return
+		}
+		mux.ServeHTTP(w, r)
+	})
 }

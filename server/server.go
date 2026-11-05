@@ -23,6 +23,8 @@ type Server struct {
 	verbose bool
 	relay   bool // -relay: carry traffic for players who can't reach each other (relay.go)
 
+	httpToken string // -http-token: required by the status page when set (api.go)
+
 	// ponytail: one lock for everything; per-title locks if one server ever
 	// carries enough titles for it to show.
 	mu       sync.Mutex

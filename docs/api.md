@@ -250,3 +250,6 @@ read-only and has no authentication.
 |---|---|
 | `/` | status page: rooms and leaderboards, refreshes every 5 s |
 | `/api/stats` | the same data as JSON |
+
+With `-http-token` set, both paths answer 401 unless the request carries the token
+(`Authorization: Bearer <token>`, or `?token=<token>`).

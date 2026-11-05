@@ -25,6 +25,7 @@ docker compose up -d
 |---|---|---|
 | `-addr` | `:36100` | TCP and UDP address for game clients |
 | `-http` | `127.0.0.1:36101` | Status page and `/api/stats`. Set it to `""` to turn it off. |
+| `-http-token` | none | Require this token on the status page, as `Authorization: Bearer <token>` or `?token=<token>`. Set it whenever `-http` is not on localhost; the server logs a warning if it is not. |
 | `-max-rooms` | `1000` | Room limit across all titles |
 | `-relay` | off | Carry traffic between players who can't reach each other directly: streams into a player behind a router, and datagrams when a router won't let punched traffic through. Uses this server's bandwidth. |
 | `-v` | off | Log every room event, not just connections |
